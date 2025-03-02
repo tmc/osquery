@@ -282,6 +282,48 @@ For osquery to capture events in its `es_process_events` table, it must have the
 
 **If osquery is not granted the FDA permission, it will not prompt the user to grant it.** It will just issue a warning (when running with `--verbose`), and the `es_process_events` table will simply be empty when queried.
 
+#### Comprehensive EndpointSecurity event coverage
+
+By default, osquery's EndpointSecurity integration only captures basic process lifecycle events (exec, fork, exit). However, the EndpointSecurity framework provides access to many more event types that can be valuable for security monitoring and threat detection.
+
+osquery now supports an opt-in model to enable additional event categories:
+
+```
+# Basic process events (enabled by default with --disable_endpointsecurity=false)
+--disable_endpointsecurity=false
+
+# Enable all authorization-related events (setuid, seteuid, etc.)
+--enable_es_auth_events=true
+
+# Enable network events (socket binding and connections)
+--enable_es_network_events=true 
+
+# Enable file system events beyond basic FIM (mount, unmount, etc.)
+--enable_es_file_events=true
+
+# Enable remote thread creation events (detect code injection)
+--enable_es_remote_thread_events=true
+
+# Enable screen sharing connection events (macOS 13.0+)
+--enable_es_screensharing_events=true
+
+# Enable profile management events (macOS 14.0+)
+--enable_es_profile_events=true
+
+# Enable authentication events (SSH login, su, sudo, etc.)
+--enable_es_authentication_events=true
+
+# Enable XPC connection events (macOS 14.0+)
+--enable_es_xpc_events=true
+
+# Alternatively, enable specific event types for fine-grained control
+--es_enabled_events="notify_mount,notify_unmount,notify_setuid,notify_authentication"
+```
+
+All of these events will appear in the `es_process_events` table with their respective event-specific fields populated. The table schema has been expanded to accommodate the full range of event types.
+
+Note that enabling many event types can significantly increase the event volume and resource usage. It's recommended to enable only the event categories relevant to your monitoring needs.
+
 #### Full Disk Access
 
 The FDA permission (or lack thereof) is inherited from `Terminal.app` when running osquery interactively, but is *not* inherited from `launchctl` when running as a service (including when started using the `osqueryctl` helper script).

@@ -443,7 +443,47 @@ This is a comma delimited list of path literals, which when set, is passed to En
 
 `--es_fim_mute_path_prefix`
 
-This is a comma delimited list of path prefixes, which when set is passed to EndpointSecurity based `es_process_file_events` table. This will result in events being muted which match the path prefixes. 
+This is a comma delimited list of path prefixes, which when set is passed to EndpointSecurity based `es_process_file_events` table. This will result in events being muted which match the path prefixes.
+
+`--es_fim_enable_open_events=false`
+
+Enable open events for EndpointSecurity based file event collection. This can significantly increase the event volume.
+
+`--enable_es_network_events=false`
+
+Enable network-related events (UIPC bind/connect) from EndpointSecurity in the `es_process_events` table.
+
+`--enable_es_auth_events=false`
+
+Enable authorization-related events (setuid, seteuid, etc.) from EndpointSecurity in the `es_process_events` table.
+
+`--enable_es_file_events=false`
+
+Enable extended file-related events from EndpointSecurity in the `es_process_events` table. This is distinct from the file integrity monitoring events in the `es_process_file_events` table, and includes events like chdir, chroot, mount, unmount, etc.
+
+`--enable_es_remote_thread_events=false`
+
+Enable remote thread creation events from EndpointSecurity in the `es_process_events` table. These events can be valuable for detecting code injection techniques.
+
+`--enable_es_screensharing_events=false`
+
+Enable screen sharing connection events from EndpointSecurity in the `es_process_events` table. Available on macOS 13.0+.
+
+`--enable_es_profile_events=false`
+
+Enable profile-related events (profile installations and removals) from EndpointSecurity in the `es_process_events` table. Available on macOS 14.0+.
+
+`--enable_es_authentication_events=false`
+
+Enable authentication-related events (SSH logins, su, sudo, etc.) from EndpointSecurity in the `es_process_events` table. Available on macOS 13.0+ and 14.0+ depending on the specific event type.
+
+`--enable_es_xpc_events=false`
+
+Enable XPC connection events from EndpointSecurity in the `es_process_events` table. Available on macOS 14.0+.
+
+`--es_enabled_events=""`
+
+Comma-delimited list of specific EndpointSecurity event types to enable in the `es_process_events` table. This provides fine-grained control over which events you want to collect. For example: `"notify_mount,notify_unmount,notify_setuid"`. See the source code for the complete list of available events.
 
 ## Logging/results flags
 
