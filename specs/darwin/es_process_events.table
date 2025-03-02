@@ -1,22 +1,19 @@
 table_name("es_process_events")
-description("Process execution events from EndpointSecurity.")
+description("Process and system events from EndpointSecurity, including process lifecycle, authentication, network, and other security-relevant events.")
 schema([
     Column("version", INTEGER, "Version of EndpointSecurity event"),
     Column("seq_num", BIGINT, "Per event sequence number"),
     Column("global_seq_num", BIGINT, "Global sequence number"),
+    Column("event_type", TEXT, "Type of EndpointSecurity event"),
     Column("pid", BIGINT, "Process (or thread) ID"),
     Column("pidversion", BIGINT, "Process ID version"),
     Column("path", TEXT, "Path of executed file"),
     Column("parent", BIGINT, "Parent process ID"),
     Column("original_parent", BIGINT, "Original parent process ID in case of reparenting"),
-    Column("session_id", BIGINT, "The identifier of the session that contains the process group."),
-    Column("responsible_pid", BIGINT, "The pid of the process responsible for this process."),
-    Column("responsible_pidversion", BIGINT, "The pidversion of the process responsible for this process."),
-    Column("parent_pidversion", BIGINT, "The pidversion of the parent process."),
-    Column("cmdline", TEXT, "Command line arguments (argv)"),
-    Column("cmdline_count", BIGINT, "Number of command line arguments"),
-    Column("env", TEXT, "Environment variables delimited by spaces"),
-    Column("env_count", BIGINT, "Number of environment variables"),
+    Column("session_id", BIGINT, "The identifier of the session that contains the process group"),
+    Column("responsible_pid", BIGINT, "The pid of the process responsible for this process"),
+    Column("responsible_pidversion", BIGINT, "The pidversion of the process responsible for this process"),
+    Column("parent_pidversion", BIGINT, "The pidversion of the parent process"),
     Column("cwd", TEXT, "The process current working directory"),
     Column("uid", BIGINT, "User ID of the process"),
     Column("euid", BIGINT, "Effective User ID of the process"),
@@ -27,12 +24,68 @@ schema([
     Column("team_id", TEXT, "Team identifier of the process"),
     Column("cdhash", TEXT, "Codesigning hash of the process"),
     Column("platform_binary", INTEGER, "Indicates if the binary is Apple signed binary (1) or not (0)"),
+    Column("codesigning_flags", TEXT, "Codesigning flags matching one of these options, in a comma separated list: NOT_VALID, ADHOC, NOT_RUNTIME, INSTALLER"),
+    
+    # Process-specific event columns
+    Column("cmdline", TEXT, "Command line arguments (argv)"),
+    Column("cmdline_count", BIGINT, "Number of command line arguments"),
+    Column("env", TEXT, "Environment variables delimited by spaces"),
+    Column("env_count", BIGINT, "Number of environment variables"),
     Column("exit_code", INTEGER, "Exit code of a process in case of an exit event"),
     Column("child_pid", BIGINT, "Process ID of a child process in case of a fork event"),
+    
+    # UID/GID change event columns
+    Column("target_uid", BIGINT, "Target user ID for setuid-type events"),
+    Column("target_euid", BIGINT, "Target effective user ID for setuid-type events"),
+    Column("target_gid", BIGINT, "Target group ID for setgid-type events"),
+    Column("target_egid", BIGINT, "Target effective group ID for setgid-type events"),
+    
+    # Signal event columns
+    Column("signal_number", INTEGER, "Signal number for signal events"),
+    Column("target_pid", BIGINT, "Target process ID for signal or remote thread events"),
+    
+    # Socket event columns
+    Column("socket_domain", TEXT, "Socket domain/family for socket events"),
+    Column("socket_type", TEXT, "Socket type for socket events"),
+    Column("socket_protocol", TEXT, "Socket protocol for socket events"),
+    Column("socket_path", TEXT, "Socket path for UNIX domain socket events"),
+    
+    # Mount event columns
+    Column("mount_path", TEXT, "Mount point path for mount events"),
+    Column("mount_type", TEXT, "Filesystem type for mount events"),
+    
+    # SSH event columns
+    Column("ssh_login_username", TEXT, "Username for SSH login events"),
+    
+    # ScreenSharing event columns
+    Column("screensharing_type", TEXT, "Type of screensharing event (attach/detach)"),
+    Column("screensharing_viewer_app_path", TEXT, "Path of the screen sharing viewer application"),
+    Column("connection_type", TEXT, "Type of screen sharing connection"),
+    
+    # SU/sudo event columns
+    Column("su_from_username", TEXT, "Original username for su events"),
+    Column("su_to_username", TEXT, "Target username for su events"),
+    Column("sudo_command", TEXT, "Command executed with sudo"),
+    Column("success", TEXT, "Success status for authentication events"),
+    
+    # Authentication/authorization event columns
+    Column("auth_right", TEXT, "Authorization right name for authorization events"),
+    Column("auth_type", TEXT, "Type of authentication event"),
+    Column("result_type", TEXT, "Result type of authentication event"),
+    
+    # Profile event columns
+    Column("profile_identifier", TEXT, "Profile identifier for profile events"),
+    Column("profile_uuid", TEXT, "Profile UUID for profile events"),
+    
+    # XPC event columns
+    Column("service_name", TEXT, "Service name for XPC connect events"),
+    
+    # Thread event columns
+    Column("thread_state", TEXT, "Thread state info for thread-related events"),
+    
+    # Time metadata
     Column("time", BIGINT, "Time of execution in UNIX time", additional=True),
-    Column("event_type", TEXT, "Type of EndpointSecurity event"),
     Column("eid", TEXT, "Event ID", hidden=True),
-    Column("codesigning_flags", TEXT, "Codesigning flags matching one of these options, in a comma separated list: NOT_VALID, ADHOC, NOT_RUNTIME, INSTALLER. See kern/cs_blobs.h in XNU for descriptions."),
 ])
 attributes(event_subscriber=True)
 implementation("events/darwin/es_process_events@es_process_events::genTable")
