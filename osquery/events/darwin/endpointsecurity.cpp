@@ -64,17 +64,18 @@ void EndpointSecurityPublisher::configure() {
     // Add all event types from this subscription
     event_types.insert(event_types.end(), events.begin(), events.end());
   }
-  
+
   // Remove duplicate event types
   std::sort(event_types.begin(), event_types.end());
-  event_types.erase(std::unique(event_types.begin(), event_types.end()), event_types.end());
-  
+  event_types.erase(std::unique(event_types.begin(), event_types.end()),
+                    event_types.end());
+
   if (!event_types.empty()) {
     auto es_sub = es_subscribe(es_client_, &event_types[0], event_types.size());
     if (es_sub != ES_RETURN_SUCCESS) {
       VLOG(1) << "Couldn't subscribe to EndpointSecurity subsystem";
     } else {
-      VLOG(1) << "Successfully subscribed to " << event_types.size() 
+      VLOG(1) << "Successfully subscribed to " << event_types.size()
               << " EndpointSecurity event types";
     }
   }
@@ -159,16 +160,17 @@ void EndpointSecurityPublisher::handleMessage(const es_message_t* message) {
     ec->event_type = "exit";
     ec->exit_code = message->event.exit.stat;
   } break;
-  
+
   // Signal events
   case ES_EVENT_TYPE_NOTIFY_SIGNAL: {
     ec->event_type = "signal";
     ec->signal_number = message->event.signal.sig;
     if (message->event.signal.target) {
-      ec->metadata["target_pid"] = std::to_string(audit_token_to_pid(message->event.signal.target->audit_token));
+      ec->metadata["target_pid"] = std::to_string(
+          audit_token_to_pid(message->event.signal.target->audit_token));
     }
   } break;
-  
+
   // UID/GID events
   case ES_EVENT_TYPE_NOTIFY_SETUID: {
     ec->event_type = "setuid";
@@ -192,7 +194,7 @@ void EndpointSecurityPublisher::handleMessage(const es_message_t* message) {
     ec->target_gid = message->event.setregid.rgid;
     ec->target_egid = message->event.setregid.egid;
   } break;
-  
+
   // Network events
   case ES_EVENT_TYPE_NOTIFY_UIPC_BIND: {
     ec->event_type = "uipc_bind";
@@ -220,7 +222,7 @@ void EndpointSecurityPublisher::handleMessage(const es_message_t* message) {
     ec->socket_type = std::to_string(message->event.uipc_connect.type);
     ec->socket_protocol = std::to_string(message->event.uipc_connect.protocol);
   } break;
-  
+
   // Mount events
   case ES_EVENT_TYPE_NOTIFY_MOUNT: {
     ec->event_type = "mount";
@@ -236,130 +238,125 @@ void EndpointSecurityPublisher::handleMessage(const es_message_t* message) {
       ec->mount_type = message->event.unmount.statfs->f_fstypename;
     }
   } break;
-  
+
   // Remote thread events
   case ES_EVENT_TYPE_NOTIFY_REMOTE_THREAD_CREATE: {
     ec->event_type = "remote_thread_create";
     if (message->event.remote_thread_create.target) {
-      ec->metadata["target_pid"] = std::to_string(
-        audit_token_to_pid(message->event.remote_thread_create.target->audit_token));
+      ec->metadata["target_pid"] = std::to_string(audit_token_to_pid(
+          message->event.remote_thread_create.target->audit_token));
     }
-    ec->metadata["thread_state"] = std::to_string(
-      message->event.remote_thread_create.thread_state);
+    ec->metadata["thread_state"] =
+        std::to_string(message->event.remote_thread_create.thread_state);
   } break;
-  
+
   // SSH events
   case ES_EVENT_TYPE_NOTIFY_OPENSSH_LOGIN: {
     ec->event_type = "openssh_login";
-    ec->ssh_login_username = 
-      getStringFromToken(message->event.openssh_login.username);
-    ec->metadata["success"] = 
-      message->event.openssh_login.success ? "true" : "false";
-    ec->metadata["result_type"] = std::to_string(
-      message->event.openssh_login.result_type);
+    ec->ssh_login_username =
+        getStringFromToken(message->event.openssh_login.username);
+    ec->metadata["success"] =
+        message->event.openssh_login.success ? "true" : "false";
+    ec->metadata["result_type"] =
+        std::to_string(message->event.openssh_login.result_type);
   } break;
   case ES_EVENT_TYPE_NOTIFY_OPENSSH_LOGOUT: {
     ec->event_type = "openssh_logout";
-    ec->ssh_login_username = 
-      getStringFromToken(message->event.openssh_logout.username);
+    ec->ssh_login_username =
+        getStringFromToken(message->event.openssh_logout.username);
   } break;
-  
+
   // ScreenSharing events
   case ES_EVENT_TYPE_NOTIFY_SCREENSHARING_ATTACH: {
     ec->event_type = "screensharing_attach";
     ec->screensharing_type = "attach";
     if (message->event.screensharing_attach.viewer_appliance) {
-      ec->screensharing_viewer_app_path = 
-        getStringFromToken(&message->event.screensharing_attach.viewer_appliance->executable->path);
+      ec->screensharing_viewer_app_path =
+          getStringFromToken(&message->event.screensharing_attach
+                                  .viewer_appliance->executable->path);
     }
-    ec->metadata["success"] = 
-      message->event.screensharing_attach.success ? "true" : "false";
-    ec->metadata["type"] = std::to_string(
-      message->event.screensharing_attach.type);
+    ec->metadata["success"] =
+        message->event.screensharing_attach.success ? "true" : "false";
+    ec->metadata["type"] =
+        std::to_string(message->event.screensharing_attach.type);
   } break;
   case ES_EVENT_TYPE_NOTIFY_SCREENSHARING_DETACH: {
     ec->event_type = "screensharing_detach";
     ec->screensharing_type = "detach";
     if (message->event.screensharing_detach.viewer_appliance) {
-      ec->screensharing_viewer_app_path = 
-        getStringFromToken(&message->event.screensharing_detach.viewer_appliance->executable->path);
+      ec->screensharing_viewer_app_path =
+          getStringFromToken(&message->event.screensharing_detach
+                                  .viewer_appliance->executable->path);
     }
-    ec->metadata["type"] = std::to_string(
-      message->event.screensharing_detach.type);
+    ec->metadata["type"] =
+        std::to_string(message->event.screensharing_detach.type);
   } break;
-  
+
   // Su/sudo events
   case ES_EVENT_TYPE_NOTIFY_SU: {
     ec->event_type = "su";
     if (message->event.su.from_username && message->event.su.to_username) {
-      ec->su_from_username = 
-        getStringFromToken(message->event.su.from_username);
-      ec->su_to_username = 
-        getStringFromToken(message->event.su.to_username);
+      ec->su_from_username =
+          getStringFromToken(message->event.su.from_username);
+      ec->su_to_username = getStringFromToken(message->event.su.to_username);
     }
-    ec->metadata["success"] = 
-      message->event.su.success ? "true" : "false";
+    ec->metadata["success"] = message->event.su.success ? "true" : "false";
   } break;
   case ES_EVENT_TYPE_NOTIFY_SUDO: {
     ec->event_type = "sudo";
     ec->sudo_success = message->event.sudo.success;
     if (message->event.sudo.command) {
-      ec->sudo_command = 
-        getStringFromToken(message->event.sudo.command);
+      ec->sudo_command = getStringFromToken(message->event.sudo.command);
     }
   } break;
-  
+
   // Authentication events
   case ES_EVENT_TYPE_NOTIFY_AUTHENTICATION: {
     ec->event_type = "authentication";
-    ec->metadata["success"] = 
-      message->event.authentication.success ? "true" : "false";
-    ec->metadata["type"] = std::to_string(
-      message->event.authentication.type);
+    ec->metadata["success"] =
+        message->event.authentication.success ? "true" : "false";
+    ec->metadata["type"] = std::to_string(message->event.authentication.type);
   } break;
   case ES_EVENT_TYPE_NOTIFY_AUTHORIZATION: {
     ec->event_type = "authorization";
     if (message->event.authorization.right) {
-      ec->auth_right = 
-        getStringFromToken(message->event.authorization.right);
+      ec->auth_right = getStringFromToken(message->event.authorization.right);
     }
-    ec->metadata["result_type"] = std::to_string(
-      message->event.authorization.result_type);
+    ec->metadata["result_type"] =
+        std::to_string(message->event.authorization.result_type);
   } break;
-  
+
   // Profile events
   case ES_EVENT_TYPE_NOTIFY_PROFILE_ADD: {
     ec->event_type = "profile_add";
     if (message->event.profile_add.identifier) {
-      ec->profile_identifier = 
-        getStringFromToken(message->event.profile_add.identifier);
+      ec->profile_identifier =
+          getStringFromToken(message->event.profile_add.identifier);
     }
     if (message->event.profile_add.uuid) {
-      ec->profile_uuid = 
-        getStringFromToken(message->event.profile_add.uuid);
+      ec->profile_uuid = getStringFromToken(message->event.profile_add.uuid);
     }
   } break;
   case ES_EVENT_TYPE_NOTIFY_PROFILE_REMOVE: {
     ec->event_type = "profile_remove";
     if (message->event.profile_remove.identifier) {
-      ec->profile_identifier = 
-        getStringFromToken(message->event.profile_remove.identifier);
+      ec->profile_identifier =
+          getStringFromToken(message->event.profile_remove.identifier);
     }
     if (message->event.profile_remove.uuid) {
-      ec->profile_uuid = 
-        getStringFromToken(message->event.profile_remove.uuid);
+      ec->profile_uuid = getStringFromToken(message->event.profile_remove.uuid);
     }
   } break;
-  
-  // XPC events  
+
+  // XPC events
   case ES_EVENT_TYPE_NOTIFY_XPC_CONNECT: {
     ec->event_type = "xpc_connect";
     if (message->event.xpc_connect.service_name) {
-      ec->metadata["service_name"] = 
-        getStringFromToken(message->event.xpc_connect.service_name);
+      ec->metadata["service_name"] =
+          getStringFromToken(message->event.xpc_connect.service_name);
     }
   } break;
-  
+
   // Handle other events
   default: {
     // Generic event type extraction
@@ -371,7 +368,7 @@ void EndpointSecurityPublisher::handleMessage(const es_message_t* message) {
       }
     }
     ec->event_type = event_type_name;
-    
+
     VLOG(1) << "EndpointSecurity unhandled event type: " << event_type_name;
   } break;
   }

@@ -23,15 +23,15 @@ REGISTER(ESProcessEventSubscriber, "event_subscriber", "es_process_events");
 Status ESProcessEventSubscriber::init() {
   if (__builtin_available(macos 10.15, *)) {
     auto sc = createSubscriptionContext();
-    
+
     // Get all enabled event types from the configuration system
     sc->es_event_subscriptions_ = getEnabledEventTypes();
-    
+
     // Only pass events that should be handled by this subscriber
     // to avoid cluttering the logs during verbose mode
-    VLOG(1) << "ESProcessEventSubscriber subscribed to " 
+    VLOG(1) << "ESProcessEventSubscriber subscribed to "
             << sc->es_event_subscriptions_.size() << " event types";
-    
+
     subscribe(&ESProcessEventSubscriber::Callback, sc);
 
     return Status::success();
@@ -82,7 +82,7 @@ Status ESProcessEventSubscriber::Callback(
   } else if (ec->event_type == "exit") {
     r["exit_code"] = INTEGER(ec->exit_code);
   }
-  
+
   // UID/GID change events
   else if (ec->event_type == "setuid" || ec->event_type == "seteuid") {
     r["target_uid"] = BIGINT(ec->target_uid);
@@ -95,7 +95,7 @@ Status ESProcessEventSubscriber::Callback(
     r["target_gid"] = BIGINT(ec->target_gid);
     r["target_egid"] = BIGINT(ec->target_egid);
   }
-  
+
   // Signal events
   else if (ec->event_type == "signal") {
     r["signal_number"] = INTEGER(ec->signal_number);
@@ -103,24 +103,25 @@ Status ESProcessEventSubscriber::Callback(
       r["target_pid"] = ec->metadata.at("target_pid");
     }
   }
-  
+
   // Socket events
   else if (ec->event_type == "uipc_bind" || ec->event_type == "uipc_connect") {
     r["socket_domain"] = ec->socket_domain;
     r["socket_type"] = ec->socket_type;
     r["socket_protocol"] = ec->socket_protocol;
   }
-  
+
   // Mount events
   else if (ec->event_type == "mount" || ec->event_type == "unmount") {
     r["mount_path"] = ec->mount_path;
     r["mount_type"] = ec->mount_type;
   }
-  
+
   // SSH events
-  else if (ec->event_type == "openssh_login" || ec->event_type == "openssh_logout") {
+  else if (ec->event_type == "openssh_login" ||
+           ec->event_type == "openssh_logout") {
     r["ssh_login_username"] = ec->ssh_login_username;
-    
+
     if (!ec->metadata.empty()) {
       if (ec->metadata.count("success") > 0) {
         r["success"] = ec->metadata.at("success");
@@ -130,12 +131,13 @@ Status ESProcessEventSubscriber::Callback(
       }
     }
   }
-  
+
   // ScreenSharing events
-  else if (ec->event_type == "screensharing_attach" || ec->event_type == "screensharing_detach") {
+  else if (ec->event_type == "screensharing_attach" ||
+           ec->event_type == "screensharing_detach") {
     r["screensharing_type"] = ec->screensharing_type;
     r["screensharing_viewer_app_path"] = ec->screensharing_viewer_app_path;
-    
+
     if (!ec->metadata.empty()) {
       if (ec->metadata.count("success") > 0) {
         r["success"] = ec->metadata.at("success");
@@ -145,23 +147,23 @@ Status ESProcessEventSubscriber::Callback(
       }
     }
   }
-  
+
   // SU events
   else if (ec->event_type == "su") {
     r["su_from_username"] = ec->su_from_username;
     r["su_to_username"] = ec->su_to_username;
-    
+
     if (!ec->metadata.empty() && ec->metadata.count("success") > 0) {
       r["success"] = ec->metadata.at("success");
     }
   }
-  
+
   // Sudo events
   else if (ec->event_type == "sudo") {
     r["sudo_command"] = ec->sudo_command;
     r["success"] = ec->sudo_success ? "true" : "false";
   }
-  
+
   // Authentication events
   else if (ec->event_type == "authentication") {
     if (!ec->metadata.empty()) {
@@ -173,29 +175,30 @@ Status ESProcessEventSubscriber::Callback(
       }
     }
   }
-  
+
   // Authorization events
   else if (ec->event_type == "authorization") {
     r["auth_right"] = ec->auth_right;
-    
+
     if (!ec->metadata.empty() && ec->metadata.count("result_type") > 0) {
       r["result_type"] = ec->metadata.at("result_type");
     }
   }
-  
+
   // Profile events
-  else if (ec->event_type == "profile_add" || ec->event_type == "profile_remove") {
+  else if (ec->event_type == "profile_add" ||
+           ec->event_type == "profile_remove") {
     r["profile_identifier"] = ec->profile_identifier;
     r["profile_uuid"] = ec->profile_uuid;
   }
-  
+
   // XPC events
   else if (ec->event_type == "xpc_connect") {
     if (!ec->metadata.empty() && ec->metadata.count("service_name") > 0) {
       r["service_name"] = ec->metadata.at("service_name");
     }
   }
-  
+
   // Include all remaining metadata values
   for (const auto& meta_pair : ec->metadata) {
     if (r.count(meta_pair.first) == 0) {
