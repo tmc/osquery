@@ -18,11 +18,12 @@ on:
         required: false
         default: ''
   
-  pull_request:
-    paths:
-      - 'osquery/events/darwin/endpointsecurity*'
-      - 'osquery/tables/events/darwin/es_*'
-      - 'specs/darwin/es_*'
+  # Commented out to prevent automatic triggering
+  # pull_request:
+  #   paths:
+  #     - 'osquery/events/darwin/endpointsecurity*'
+  #     - 'osquery/tables/events/darwin/es_*'
+  #     - 'specs/darwin/es_*'
 
 # Cancel in-progress runs for PRs
 concurrency:
@@ -40,15 +41,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, macos-13]
-        architecture: [arm64, x86_64]
+        os: [macos-14]
+        architecture: [x86_64]
         build_type: [RelWithDebInfo]
         include:
           - os: macos-14
             xcode_version: Xcode_15.4
-            min_deployment: '10.15'
-          - os: macos-13
-            xcode_version: Xcode_14.3.1
             min_deployment: '10.15'
 
     steps:
@@ -216,14 +214,10 @@ EOF
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, macos-13, macos-12]
+        os: [macos-14]
         include:
           - os: macos-14
             xcode_version: Xcode_15.4
-          - os: macos-13
-            xcode_version: Xcode_14.3.1
-          - os: macos-12
-            xcode_version: Xcode_13.4.1
 
     steps:
     - name: Setup test directory
