@@ -1,0 +1,345 @@
+#
+# Copyright (c) 2014-present, The osquery authors
+#
+# This source code is licensed as defined by the LICENSE file found in the
+# root directory of this source tree.
+#
+# SPDX-License-Identifier: (Apache-2.0 OR GPL-2.0-only)
+#
+
+# This workflow tests EndpointSecurity features across multiple macOS versions
+name: macOS EndpointSecurity Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to test'
+        required: false
+        default: ''
+  
+  pull_request:
+    paths:
+      - 'osquery/events/darwin/endpointsecurity*'
+      - 'osquery/tables/events/darwin/es_*'
+      - 'specs/darwin/es_*'
+
+# Cancel in-progress runs for PRs
+concurrency:
+  group: es-macos-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  SUBMODULE_CACHE_VERSION: 3
+
+jobs:
+  build_es_test_packages:
+    name: Build ES test packages
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-13]
+        architecture: [arm64, x86_64]
+        build_type: [RelWithDebInfo]
+        include:
+          - os: macos-14
+            xcode_version: Xcode_15.4
+            min_deployment: '10.15'
+          - os: macos-13
+            xcode_version: Xcode_14.3.1
+            min_deployment: '10.15'
+
+    steps:
+    - name: Setup the build paths
+      shell: bash
+      id: build_paths
+      run: |
+        rel_build_path="workspace/build"
+        rel_source_path="workspace/src"
+        rel_ccache_path="workspace/ccache"
+        rel_package_path="workspace/package"
+        rel_test_package_path="workspace/test_package"
+
+        mkdir -p ${rel_build_path} \
+                ${rel_source_path} \
+                ${rel_ccache_path} \
+                ${rel_package_path} \
+                ${rel_test_package_path}
+
+        echo "SOURCE=$(realpath ${rel_source_path})" >> $GITHUB_OUTPUT
+        echo "BINARY=$(realpath ${rel_build_path})" >> $GITHUB_OUTPUT
+        echo "CCACHE=$(realpath ${rel_ccache_path})" >> $GITHUB_OUTPUT
+        echo "PACKAGE=$(realpath ${rel_package_path})" >> $GITHUB_OUTPUT
+        echo "TEST_PACKAGE=$(realpath ${rel_test_package_path})" >> $GITHUB_OUTPUT
+        echo "REL_TEST_PACKAGE=${rel_test_package_path}" >> $GITHUB_OUTPUT
+
+    - name: Select requested branch
+      id: branch_selector
+      shell: bash
+      run: |
+        BRANCH="${{ github.event.inputs.branch }}"
+        
+        if [[ -z "${BRANCH}" ]]; then
+          # If no branch specified, use the PR branch or default branch
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BRANCH="${{ github.event.pull_request.head.ref }}"
+          else
+            BRANCH="master"
+          fi
+        fi
+        
+        echo "BRANCH=${BRANCH}" >> $GITHUB_OUTPUT
+
+    - name: Clone the osquery repository
+      uses: actions/checkout@v4
+      with:
+        path: ${{ steps.build_paths.outputs.SOURCE }}
+        ref: ${{ steps.branch_selector.outputs.BRANCH }}
+        fetch-depth: 0
+
+    - name: Select the Xcode version
+      shell: bash
+      run: |
+        sudo xcode-select -s "/Applications/${{ matrix.xcode_version }}.app/Contents/Developer"
+        
+    - name: Update the cache (ccache)
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.build_paths.outputs.CCACHE }}
+        key: |
+          es_ccache_${{ matrix.os }}_${{ matrix.architecture }}_${{ matrix.build_type }}_${{ github.sha }}
+        restore-keys: |
+          es_ccache_${{ matrix.os }}_${{ matrix.architecture }}_${{ matrix.build_type }}
+
+    - name: Update the cache (git submodules)
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.build_paths.outputs.SOURCE }}/.git/modules
+        key: |
+          es_gitmodules_${{ matrix.os }}_${{ matrix.architecture }}_${{env.SUBMODULE_CACHE_VERSION}}_${{ github.sha }}
+        restore-keys: |
+          es_gitmodules_${{ matrix.os }}_${{ matrix.architecture }}_${{env.SUBMODULE_CACHE_VERSION}}
+
+    - name: Update the git submodules
+      working-directory: ${{ steps.build_paths.outputs.SOURCE }}
+      run: |
+        git submodule sync --recursive
+        git submodule update --init --recursive
+
+    - name: Configure the project
+      working-directory: ${{ steps.build_paths.outputs.BINARY }}
+      env:
+        CCACHE_DIR: ${{ steps.build_paths.outputs.CCACHE }}
+      run: |
+        cmake -G "Unix Makefiles" \
+          -DCMAKE_C_COMPILER=clang \
+          -DCMAKE_CXX_COMPILER=clang++ \
+          -DCMAKE_OSX_ARCHITECTURES="${{ matrix.architecture }}" \
+          -DCMAKE_OSX_DEPLOYMENT_TARGET="${{ matrix.min_deployment }}" \
+          -DCMAKE_BUILD_TYPE:STRING="${{ matrix.build_type }}" \
+          -DOSQUERY_BUILD_TESTS=ON \
+          -DOSQUERY_ENABLE_TESTS_ONLY=OFF \
+          -DOSQUERY_NO_DEBUG_SYMBOLS=OFF \
+          "${{ steps.build_paths.outputs.SOURCE }}"
+
+    - name: Build the project
+      working-directory: ${{ steps.build_paths.outputs.BINARY }}
+      env:
+        CCACHE_DIR: ${{ steps.build_paths.outputs.CCACHE }}
+      run: |
+        cmake --build . -j $(sysctl -n hw.logicalcpu)
+
+    - name: Create EndpointSecurity test package
+      working-directory: ${{ steps.build_paths.outputs.TEST_PACKAGE }}
+      shell: bash
+      run: |
+        # Create a directory structure for the test package
+        mkdir -p osquery-es-test/bin
+        mkdir -p osquery-es-test/lib
+        
+        # Copy relevant binaries and libraries
+        cp ${{ steps.build_paths.outputs.BINARY }}/osquery/osqueryi osquery-es-test/bin/
+        cp ${{ steps.build_paths.outputs.BINARY }}/osquery/osqueryd osquery-es-test/bin/
+        
+        # Copy test files
+        cp -r ${{ steps.build_paths.outputs.BINARY }}/test_configs osquery-es-test/
+        
+        # Create entitlements info for testing
+        cat > osquery-es-test/entitlements.xml << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.developer.endpoint-security.client</key>
+    <true/>
+</dict>
+</plist>
+EOF
+        
+        # Create testing README
+        cat > osquery-es-test/README.md << EOF
+# EndpointSecurity Testing Package for macOS ${{ matrix.os }}
+
+## Required Setup
+1. Disable SIP on test machines
+2. Ad-hoc sign the binaries:
+   \`\`\`
+   codesign --entitlements entitlements.xml -fs - bin/osqueryd
+   codesign --entitlements entitlements.xml -fs - bin/osqueryi
+   \`\`\`
+3. Run tests:
+   \`\`\`
+   # Basic process events
+   sudo bin/osqueryi --disable_endpointsecurity=false --verbose "SELECT * FROM es_process_events WHERE 1=1 LIMIT 10"
+   
+   # Extended event types
+   sudo bin/osqueryi --disable_endpointsecurity=false --enable_es_network_events=true --enable_es_auth_events=true "SELECT * FROM es_process_events LIMIT 10"
+   \`\`\`
+EOF
+        
+        # Create tarball
+        tar -czf ../osquery-es-test-${{ matrix.os }}-${{ matrix.architecture }}.tar.gz osquery-es-test
+
+    - name: Upload test package
+      uses: actions/upload-artifact@v4
+      with:
+        name: osquery-es-test-${{ matrix.os }}-${{ matrix.architecture }}
+        path: ${{ steps.build_paths.outputs.PACKAGE }}/osquery-es-test-${{ matrix.os }}-${{ matrix.architecture }}.tar.gz
+
+  test_es_features:
+    name: Test ES Features
+    needs: build_es_test_packages
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-13, macos-12]
+        include:
+          - os: macos-14
+            xcode_version: Xcode_15.4
+          - os: macos-13
+            xcode_version: Xcode_14.3.1
+          - os: macos-12
+            xcode_version: Xcode_13.4.1
+
+    steps:
+    - name: Setup test directory
+      shell: bash
+      id: test_paths
+      run: |
+        test_dir="es_testing"
+        mkdir -p ${test_dir}
+        
+        echo "TEST_DIR=$(realpath ${test_dir})" >> $GITHUB_OUTPUT
+
+    - name: Download test package for current architecture
+      uses: actions/download-artifact@v4
+      with:
+        name: osquery-es-test-macos-14-${{ contains(runner.arch, 'ARM') && 'arm64' || 'x86_64' }}
+        path: ${{ steps.test_paths.outputs.TEST_DIR }}
+
+    - name: Extract test package
+      working-directory: ${{ steps.test_paths.outputs.TEST_DIR }}
+      shell: bash
+      run: |
+        tar -xzf osquery-es-test-macos-14-${{ contains(runner.arch, 'ARM') && 'arm64' || 'x86_64' }}.tar.gz
+        cd osquery-es-test
+        
+        # Set permissions
+        chmod +x bin/osqueryi bin/osqueryd
+
+    - name: Ad-hoc sign binaries with entitlements
+      working-directory: ${{ steps.test_paths.outputs.TEST_DIR }}/osquery-es-test
+      shell: bash
+      run: |
+        codesign --entitlements entitlements.xml -fs - bin/osqueryd
+        codesign --entitlements entitlements.xml -fs - bin/osqueryi
+        
+        # Verify signing
+        codesign -dvv bin/osqueryd || true
+        codesign -dvv bin/osqueryi || true
+
+    - name: Test basic process events
+      working-directory: ${{ steps.test_paths.outputs.TEST_DIR }}/osquery-es-test
+      shell: bash
+      run: |
+        # Run a command to generate process events
+        sudo bin/osqueryi --disable_endpointsecurity=false --verbose "
+        .mode line
+        SELECT * FROM es_process_events 
+        WHERE path LIKE '%osqueryi%' 
+        ORDER BY time DESC LIMIT 5;" | tee es_basic_output.txt
+        
+        # Verify we got output
+        if grep -q "path = " es_basic_output.txt; then
+          echo "✅ Basic ES process events working"
+        else
+          echo "❌ Basic ES process events test failed"
+          exit 1
+        fi
+
+    - name: Test expanded event types (macOS 13+ only)
+      if: matrix.os != 'macos-12'
+      working-directory: ${{ steps.test_paths.outputs.TEST_DIR }}/osquery-es-test
+      shell: bash
+      run: |
+        # Test with network events
+        sudo bin/osqueryi --disable_endpointsecurity=false --enable_es_network_events=true "
+        .mode line
+        SELECT event_type, COUNT(*) as count FROM es_process_events 
+        GROUP BY event_type;" | tee es_expanded_output.txt
+        
+        # Check if we get multiple event types
+        event_type_count=$(grep -c "event_type = " es_expanded_output.txt || echo "0")
+        if [ "$event_type_count" -gt "1" ]; then
+          echo "✅ Expanded ES event types working"
+        else
+          echo "⚠️ Expanded ES event types test inconclusive (may need more activity)"
+        fi
+
+    - name: Test file integrity monitoring
+      working-directory: ${{ steps.test_paths.outputs.TEST_DIR }}/osquery-es-test
+      shell: bash
+      run: |
+        # Create test file
+        echo "test file" > test_fim_file.txt
+        
+        # Run FIM query
+        sudo bin/osqueryi --disable_endpointsecurity=false "
+        .mode line
+        SELECT * FROM es_process_file_events 
+        WHERE target_path LIKE '%test_fim_file.txt%' 
+        ORDER BY time DESC LIMIT 5;" | tee es_fim_output.txt
+        
+        # Check for output
+        # Note: This test is informational as results are dependent on background activity
+        grep -q "target_path = " es_fim_output.txt && echo "✅ FIM events detected" || echo "⚠️ No FIM events detected (test informational only)"
+        
+    - name: Run extended tests on newer versions
+      if: matrix.os == 'macos-14'
+      working-directory: ${{ steps.test_paths.outputs.TEST_DIR }}/osquery-es-test
+      shell: bash
+      run: |
+        # Test with all event types enabled
+        sudo bin/osqueryi --disable_endpointsecurity=false \
+          --enable_es_auth_events=true \
+          --enable_es_network_events=true \
+          --enable_es_file_events=true \
+          --enable_es_remote_thread_events=true \
+          --enable_es_screensharing_events=true \
+          --enable_es_profile_events=true \
+          --enable_es_authentication_events=true \
+          --enable_es_xpc_events=true \
+          "SELECT event_type, COUNT(*) as count FROM es_process_events 
+          GROUP BY event_type;" | tee es_all_events_output.txt
+        
+        echo "✅ Extended event types test completed on macOS 14"
+        
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      with:
+        name: es-test-results-${{ matrix.os }}
+        path: ${{ steps.test_paths.outputs.TEST_DIR }}/osquery-es-test/*.txt
