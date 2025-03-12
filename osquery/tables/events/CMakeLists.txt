@@ -46,6 +46,7 @@ function(generateOsqueryTablesEventsEventstable)
       darwin/es_process_events.cpp
       darwin/es_process_file_events.cpp
       darwin/es_authentication_events.cpp
+      darwin/es_security_events.cpp
       darwin/file_events.cpp
       darwin/hardware_events.cpp
       darwin/socket_events.cpp

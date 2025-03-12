@@ -29,4 +29,6 @@ void getProcessProperties(const es_process_t* p,
 void getBaseProcessProperties(const es_process_t* p,
                               const BaseESEventContextRef& ec);
 void appendQuotedString(std::ostream& out, std::string s, char delim);
+
+// This function is now defined in endpointsecurity.cpp as generateEventId()
 } // namespace osquery
