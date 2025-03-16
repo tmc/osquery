@@ -161,6 +161,39 @@ struct ESAuthenticationEventContext : public BaseESEventContext {
 using ESAuthenticationEventContextRef =
     std::shared_ptr<ESAuthenticationEventContext>;
 
+// Security Events subscription context and event context
+struct ESSecuritySubscriptionContext : public BaseESSubscriptionContext {};
+
+using ESSecuritySubscriptionContextRef =
+    std::shared_ptr<ESSecuritySubscriptionContext>;
+
+struct ESSecurityEventContext : public BaseESEventContext {
+  // Memory events
+  std::string address;
+  std::string protection;
+  int64_t size = 0;
+
+  // Network events
+  std::string local_address;
+  std::string remote_address;
+  int local_port = 0;
+  int remote_port = 0;
+  std::string family;
+  int protocol = 0;
+  std::string socket_type;
+
+  // System events
+  std::string kext_path;
+  std::string kext_version;
+  std::string kext_id;
+
+  // Privilege events
+  uid_t target_uid = 0;
+  gid_t target_gid = 0;
+};
+
+using ESSecurityEventContextRef = std::shared_ptr<ESSecurityEventContext>;
+
 // Core event category system
 // These help determine which subscriber should handle each event
 enum class ESEventCategory {
@@ -175,12 +208,11 @@ enum class ESEventCategory {
 // Function to determine the category of an event
 ESEventCategory categorizeESEvent(es_event_type_t event_type);
 
-// Core router for EndpointSecurity events
-class CoreEventRouter {
- public:
-  static void routeEvent(const es_message_t* message,
-                         const BaseESEventContextRef& ec);
-};
+// Helper function to check if an event type is related to authentication
+bool isAuthenticationEvent(es_event_type_t event_type);
+
+// Helper function to check if an event type is related to file operations
+bool isFileEvent(es_event_type_t event_type);
 
 class EndpointSecurityPublisher
     : public EventPublisher<EndpointSecuritySubscriptionContext,

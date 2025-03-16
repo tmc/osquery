@@ -21,9 +21,14 @@ namespace osquery {
 
 DECLARE_bool(disable_endpointsecurity);
 DECLARE_bool(enable_es_authentication_events);
+DECLARE_bool(enable_es_network_events);
+DECLARE_bool(enable_es_memory_events);
+DECLARE_bool(enable_es_system_events);
+DECLARE_bool(enable_es_privilege_events);
 
 // Forward declarations
 class ESAuthenticationEventSubscriber;
+class ESSecurityEventSubscriber;
 
 REGISTER(EndpointSecurityPublisher, "event_publisher", "endpointsecurity")
 REGISTER(ESAuthenticationEventSubscriber,
@@ -142,7 +147,7 @@ void CoreEventRouter::routeEvent(const es_message_t* message,
       auth_ec->severity = "medium";
 
       // Generate a unique event ID
-      auth_ec->eid = generateEventId();
+      auth_ec->eid = generateUUID();
 
       // Get specific authentication event data (implemented in the subscriber)
       ESAuthenticationEventSubscriber::getAuthenticationEventData(message,
@@ -154,13 +159,46 @@ void CoreEventRouter::routeEvent(const es_message_t* message,
     break;
   }
 
-  // Currently we'll pass through for other event types
-  // In subsequent PRs, we'll implement specific handlers for each category
-  case ESEventCategory::PROCESS:
+  // Security events (network, memory, privilege, system)
   case ESEventCategory::NETWORK:
-  case ESEventCategory::FILE:
   case ESEventCategory::PRIVILEGE:
-  case ESEventCategory::SYSTEM:
+  case ESEventCategory::SYSTEM: {
+    if (FLAGS_enable_es_network_events || FLAGS_enable_es_memory_events ||
+        FLAGS_enable_es_system_events || FLAGS_enable_es_privilege_events) {
+      // Convert to security event context and populate specific fields
+      auto security_ec = std::make_shared<ESSecurityEventContext>();
+
+      // Copy base properties from the original context
+      security_ec->es_event = ec->es_event;
+      security_ec->version = ec->version;
+      security_ec->seq_num = ec->seq_num;
+      security_ec->global_seq_num = ec->global_seq_num;
+      security_ec->event_type = ec->event_type;
+      security_ec->pid = ec->pid;
+      security_ec->pidversion = ec->pidversion;
+      security_ec->path = ec->path;
+      security_ec->username = ec->username;
+
+      // Set category from categorization system
+      security_ec->category = getEventCategory(message->event_type);
+      security_ec->severity = getEventSeverity(message->event_type);
+
+      // Generate a unique event ID
+      security_ec->eid = generateUUID();
+
+      // Get specific security event data
+      ESSecurityEventSubscriber::getSecurityEventData(message, security_ec);
+
+      // Fire the event to security event subscribers
+      EventFactory::fire<EndpointSecurityPublisher>(security_ec);
+    }
+    break;
+  }
+
+  // Process events (handled by existing es_process_events table)
+  case ESEventCategory::PROCESS:
+  // File events (handled by existing es_process_file_events table)
+  case ESEventCategory::FILE:
   default:
     // If it's not a specialized event, just pass through to the original
     // publisher This maintains backward compatibility
@@ -238,6 +276,118 @@ void EndpointSecurityPublisher::handleMessage(const es_message_t* message) {
     return;
   }
 
+  // Handle authentication events directly
+  if (FLAGS_enable_es_authentication_events &&
+      isAuthenticationEvent(message->event_type)) {
+    auto auth_ec = std::make_shared<ESAuthenticationEventContext>();
+
+    // Initialize base properties
+    auth_ec->es_event = message->event_type;
+    auth_ec->version = message->version;
+    if (auth_ec->version >= 2) {
+      auth_ec->seq_num = message->seq_num;
+    }
+    if (auth_ec->version >= 4) {
+      auth_ec->global_seq_num = message->global_seq_num;
+    }
+
+    // Get process properties
+    getBaseProcessProperties(message->process, auth_ec);
+
+    // Set category and default severity
+    auth_ec->category = "authentication";
+    auth_ec->severity = "medium";
+
+    // Generate a unique event ID
+    auth_ec->eid = generateEventId();
+
+    // Get specific authentication event data
+    ESAuthenticationEventSubscriber::getAuthenticationEventData(message,
+                                                                auth_ec);
+
+    // Fire the event to authentication event subscribers
+    EventFactory::fire<EndpointSecurityPublisher>(auth_ec);
+
+    // For process-related events, also fire the standard process event for
+    // backward compatibility
+    if (message->event_type == ES_EVENT_TYPE_NOTIFY_EXEC ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_FORK ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_EXIT) {
+      // Continue with standard process event handling below
+    } else {
+      // For pure authentication events, we're done
+      return;
+    }
+  }
+
+  // Handle security events directly
+  bool is_security_event =
+      (FLAGS_enable_es_memory_events &&
+       (message->event_type == ES_EVENT_TYPE_NOTIFY_MMAP ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_MPROTECT)) ||
+      (FLAGS_enable_es_network_events &&
+       (message->event_type == ES_EVENT_TYPE_NOTIFY_SOCKET ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_CONNECT ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_BIND ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_LISTEN ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_ACCEPT ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_UIPC_BIND ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_UIPC_CONNECT)) ||
+      (FLAGS_enable_es_system_events &&
+       (message->event_type == ES_EVENT_TYPE_NOTIFY_KEXTLOAD ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_KEXTUNLOAD ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_SYSCTL)) ||
+      (FLAGS_enable_es_privilege_events &&
+       (message->event_type == ES_EVENT_TYPE_NOTIFY_SETUID ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_SETEUID ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_SETREUID ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_SETGID ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_SETEGID ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_SETREGID));
+
+  if (is_security_event) {
+    auto security_ec = std::make_shared<EndpointSecurityEventContext>();
+
+    // Initialize base properties
+    security_ec->es_event = message->event_type;
+    security_ec->version = message->version;
+    if (security_ec->version >= 2) {
+      security_ec->seq_num = message->seq_num;
+    }
+    if (security_ec->version >= 4) {
+      security_ec->global_seq_num = message->global_seq_num;
+    }
+
+    // Get process properties
+    getProcessProperties(message->process, security_ec);
+
+    // Get specific security event data
+    ESSecurityEventSubscriber::getSecurityEventData(message, security_ec);
+
+    // Fire the event to security event subscribers
+    EventFactory::fire<EndpointSecurityPublisher>(security_ec);
+
+    // For process-related events, also continue with standard process event
+    // handling (though security events generally aren't process events, this
+    // just ensures compatibility)
+    if (message->event_type == ES_EVENT_TYPE_NOTIFY_EXEC ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_FORK ||
+        message->event_type == ES_EVENT_TYPE_NOTIFY_EXIT) {
+      // Continue with standard process event handling below
+    } else {
+      // For pure security events, we're done
+      return;
+    }
+  }
+
+  // For file events or default handling
+  if (isFileEvent(message->event_type)) {
+    // Let the file event publisher handle these events
+    EndpointSecurityFileEventPublisher::handleMessage(message);
+    return;
+  }
+
+  // Standard process event handling for backward compatibility
   auto ec = createEventContext();
 
   ec->version = message->version;
@@ -297,10 +447,7 @@ void EndpointSecurityPublisher::handleMessage(const es_message_t* message) {
     break;
   }
 
-  // First route to specialized handlers through the CoreEventRouter
-  CoreEventRouter::routeEvent(message, ec);
-
-  // Then continue with the original event flow for backward compatibility
+  // Fire the standard process event
   EventFactory::fire<EndpointSecurityPublisher>(ec);
 }
 

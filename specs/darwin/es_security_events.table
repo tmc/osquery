@@ -1,0 +1,53 @@
+table_name("es_security_events")
+description("EndpointSecurity security events from the Apple Endpoint Security Framework.")
+schema([
+    Column("time", BIGINT, "Time of the event"),
+    Column("eid", TEXT, "Event ID"),
+    Column("event_type", TEXT, "Event type"),
+    Column("category", TEXT, "Event category (network, memory, system, privilege)"),
+    Column("severity", TEXT, "Event severity (high, medium, low)"),
+    Column("pid", BIGINT, "Process ID"),
+    Column("parent", BIGINT, "Parent process ID"),
+    Column("path", TEXT, "Path of executed file"),
+    Column("username", TEXT, "Username of the process"),
+
+    # Memory events
+    Column("address", TEXT, "Memory address", additional=True),
+    Column("protection", TEXT, "Memory protection (r/w/x) flags", additional=True),
+    Column("size", BIGINT, "Size of memory region", additional=True),
+    
+    # Network events
+    Column("local_address", TEXT, "Local network address", additional=True),
+    Column("remote_address", TEXT, "Remote network address", additional=True),
+    Column("local_port", INTEGER, "Local network port", additional=True),
+    Column("remote_port", INTEGER, "Remote network port", additional=True),
+    Column("family", TEXT, "Network family (IPv4, IPv6, UNIX)", additional=True),
+    Column("protocol", INTEGER, "Network protocol", additional=True),
+    Column("socket_type", TEXT, "Socket type (stream, dgram, etc.)", additional=True),
+    
+    # System events
+    Column("kext_path", TEXT, "Path of loaded/unloaded kernel extension", additional=True),
+    Column("kext_version", TEXT, "Version of kernel extension", additional=True),
+    Column("kext_id", TEXT, "Bundle identifier of kernel extension", additional=True),
+    
+    # Privilege events
+    Column("uid", BIGINT, "User ID", additional=True),
+    Column("euid", BIGINT, "Effective user ID", additional=True),
+    Column("gid", BIGINT, "Group ID", additional=True),
+    Column("egid", BIGINT, "Effective group ID", additional=True),
+    Column("target_uid", BIGINT, "Target user ID for privilege changes", additional=True),
+    Column("target_gid", BIGINT, "Target group ID for privilege changes", additional=True),
+    
+    # General metadata
+    Column("description", TEXT, "Description of the event"),
+    Column("metadata", TEXT, "Additional event-specific metadata in JSON format", additional=True),
+])
+attributes(cacheable=False)
+implementation("es_security_events@ESSecurityEvents::genTable")
+examples([
+  "SELECT * FROM es_security_events WHERE severity='high' ORDER BY time DESC LIMIT 10",
+  "SELECT * FROM es_security_events WHERE category='network' AND event_type='connect' ORDER BY time DESC LIMIT 10",
+  "SELECT * FROM es_security_events WHERE category='memory' AND event_type='mprotect' AND pid=1234",
+  "SELECT * FROM es_security_events WHERE category='system' AND event_type LIKE 'kext%'",
+  "SELECT * FROM es_security_events WHERE category='privilege' AND JSON_EXTRACT(metadata, '$.status') = 'success'"
+])

@@ -21,6 +21,8 @@ function(osqueryTablesEventsTestsMain)
     generateOsqueryTablesEventsTestsPowershelleventstestsTest()
     generateOsqueryTablesEventsTestsWindowseventstestsTest()
     generateOsqueryTablesEventsTestsETWtestsTest()
+  elseif(DEFINED PLATFORM_MACOS)
+    generateOsqueryTablesEventsTestsESSecurityEventsTest()
   endif()
 endfunction()
 
@@ -161,6 +163,24 @@ function(generateOsqueryTablesEventsTestsWindowseventstestsTest)
     osquery_cxx_settings
     osquery_core
     osquery_database
+    osquery_extensions
+    osquery_extensions_implthrift
+    osquery_logger
+    osquery_registry
+    osquery_tables_events_eventstable
+    tests_helper
+    thirdparty_googletest
+  )
+endfunction()
+
+function(generateOsqueryTablesEventsTestsESSecurityEventsTest)
+  add_osquery_executable(osquery_tables_events_tests_essecurityevents-test darwin/es_security_events_tests.cpp)
+
+  target_link_libraries(osquery_tables_events_tests_essecurityevents-test PRIVATE
+    osquery_cxx_settings
+    osquery_core
+    osquery_database
+    osquery_events
     osquery_extensions
     osquery_extensions_implthrift
     osquery_logger

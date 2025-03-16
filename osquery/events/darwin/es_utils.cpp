@@ -15,6 +15,7 @@
 #include <osquery/events/darwin/es_event_categories.h>
 #include <osquery/logger/logger.h>
 #include <pwd.h>
+#include <uuid/uuid.h>
 
 namespace osquery {
 
@@ -195,5 +196,8 @@ void appendQuotedString(std::ostream& out, std::string s, char delim) {
     out << s << delim;
   }
 }
+
+// generateUUID function is now defined as generateEventId in
+// endpointsecurity.cpp
 
 } // namespace osquery
